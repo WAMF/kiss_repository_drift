@@ -2,6 +2,8 @@ import 'package:kiss_repository/kiss_repository.dart';
 import 'package:kiss_repository_tests/kiss_repository_tests.dart';
 import 'package:kiss_drift_repository/kiss_drift_repository.dart';
 
+import 'drift_query_builder.dart';
+
 class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
   Repository<ProductModel>? _repository;
 
@@ -23,6 +25,7 @@ class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
         description: json['description'] as String? ?? '',
         created: DateTime.parse(json['created'] as String),
       ),
+      queryBuilder: DriftQueryBuilder(),
       databasePath: ':memory:', // Use in-memory database for tests
     );
     return _repository!;
