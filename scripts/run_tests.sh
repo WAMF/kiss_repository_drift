@@ -1,20 +1,21 @@
 #!/bin/bash
 
 # Drift Repository - Integration Tests Runner
-# Assumes Drift environment is set up (code generation completed)
+# Drift uses embedded SQLite - no external emulator needed
 
 cd "$(dirname "$0")/.."
 
 echo "🧪 Running Drift Repository Integration Tests..."
 
-# Check if generated code exists
-if [ ! -d "lib/src" ]; then
-    echo "❌ Generated code not found"
-    echo "💡 Run setup first with: ./scripts/start_emulator.sh"
-    exit 1
-fi
+# Ensure dependencies are installed
+echo "📦 Installing dependencies..."
+dart pub get
 
-echo "✅ Drift environment detected"
+# Generate Drift code if needed
+echo "🏗️  Generating Drift code..."
+dart run build_runner build --delete-conflicting-outputs
+
+echo "✅ Drift environment ready (uses embedded SQLite)"
 
 # Run integration tests
 echo "🚀 Running integration tests..."

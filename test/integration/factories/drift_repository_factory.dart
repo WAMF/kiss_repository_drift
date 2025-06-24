@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+
 import 'package:kiss_repository/kiss_repository.dart';
 import 'package:kiss_repository_tests/kiss_repository_tests.dart';
 import 'package:kiss_drift_repository/kiss_drift_repository.dart';
@@ -33,8 +35,24 @@ class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
 
   @override
   Future<void> cleanup() async {
-    if (_repository != null) {
-      await (_repository! as RepositoryDrift<ProductModel>).clear();
+    if (_repository == null) {
+      print('🧹 Cleanup: No repository to clean');
+      return;
+    }
+
+    try {
+      final allItems = await _repository!.query();
+      print('🧹 Cleanup: Found ${allItems.length} items to delete');
+
+      if (allItems.isNotEmpty) {
+        final ids = allItems.map((item) => item.id).toList();
+        await _repository!.deleteAll(ids);
+        print('🧹 Cleanup: Deleted ${ids.length} items successfully');
+      } else {
+        print('🧹 Cleanup: Repository already empty');
+      }
+    } catch (e) {
+      print('❌ Cleanup failed: $e');
     }
   }
 

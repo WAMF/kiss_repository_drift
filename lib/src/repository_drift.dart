@@ -110,14 +110,30 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Stream<T> stream(String id) {
     final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
+    bool hasEmittedData = false;
 
-    return query.watchSingleOrNull().map((result) {
-      if (result == null) {
-        throw kiss.RepositoryException.notFound(id);
-      }
-      final jsonData = jsonDecode(result.data) as Map<String, Object?>;
-      return fromDrift(jsonData);
-    });
+    return query.watchSingleOrNull().transform(
+      StreamTransformer<Item?, T>.fromHandlers(
+        handleData: (result, sink) {
+          if (result == null) {
+            if (!hasEmittedData) {
+              // Document doesn't exist initially - emit error
+              sink.addError(kiss.RepositoryException.notFound(id));
+            } else {
+              // Document was deleted after existing - close the stream
+              sink.close();
+            }
+          } else {
+            hasEmittedData = true;
+            final jsonData = jsonDecode(result.data) as Map<String, Object?>;
+            sink.add(fromDrift(jsonData));
+          }
+        },
+        handleError: (error, stackTrace, sink) {
+          sink.addError(kiss.RepositoryException.notFound(id));
+        },
+      ),
+    );
   }
 
   @override
@@ -141,10 +157,10 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   }
 
   @override
-  Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) {
+  Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) async* {
     final selectQuery = database.select(database.items);
 
-    return selectQuery.watch().map((results) {
+    await for (final results in selectQuery.watch()) {
       // Convert all results to objects first
       final allObjects = results.map((result) {
         final jsonData = jsonDecode(result.data) as Map<String, Object?>;
@@ -153,12 +169,12 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
       // If it's AllQuery, return everything
       if (query is kiss.AllQuery) {
-        return allObjects;
+        yield allObjects;
+      } else {
+        // Apply client-side filtering for custom queries
+        yield _applyQueryFilter(allObjects, query);
       }
-
-      // Apply client-side filtering for custom queries
-      return _applyQueryFilter(allObjects, query);
-    });
+    }
   }
 
   @override
@@ -211,11 +227,6 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     final deleteQuery = database.delete(database.items)..where((tbl) => tbl.id.equals(id));
     await deleteQuery.go();
     // Don't throw exception if item doesn't exist - delete should be idempotent
-  }
-
-  @override
-  Future<void> clear() async {
-    await database.delete(database.items).go();
   }
 
   @override
