@@ -1,15 +1,23 @@
 name: kiss_drift_repository
-description: A starting point for Dart libraries or applications.
-version: 1.0.0
-# repository: https://github.com/my_org/my_repo
+description: "A Drift implementation of kiss_repository interface"
+version: 0.1.0
+homepage: https://github.com/WAMF/kiss_drift_repository
 
 environment:
   sdk: ^3.8.0
 
-# Add regular dependencies here.
 dependencies:
-  # path: ^1.8.0
+  drift: ^2.27.0
+  sqlite3: ^2.4.0
+  path: ^1.8.0
+  uuid: ^4.5.1
+  kiss_repository:
+    path: ../kiss_repository
 
 dev_dependencies:
-  lints: ^5.0.0
   test: ^1.24.0
+  very_good_analysis: ^6.0.0
+  drift_dev: ^2.27.0
+  build_runner: ^2.4.0
+  kiss_repository_tests:
+    path: ../kiss_repository_tests
