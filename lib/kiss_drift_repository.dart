@@ -3,6 +3,6 @@
 /// More dartdocs go here.
 library;
 
-export 'src/kiss_drift_repository_base.dart';
+export 'src/repository_drift.dart';
 
 // TODO: Export any libraries intended for clients of this package.
