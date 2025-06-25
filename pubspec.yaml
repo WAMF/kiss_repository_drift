@@ -11,13 +11,11 @@ dependencies:
   sqlite3: ^2.4.0
   path: ^1.8.0
   uuid: ^4.5.1
-  kiss_repository:
-    path: ../kiss_repository
+  kiss_repository: ^0.11.0
 
 dev_dependencies:
   test: ^1.24.0
   very_good_analysis: ^6.0.0
   drift_dev: ^2.27.0
   build_runner: ^2.4.0
-  kiss_repository_tests:
-    path: ../kiss_repository_tests
+  kiss_repository_tests: ^0.1.0
