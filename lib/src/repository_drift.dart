@@ -1,11 +1,11 @@
+// ignore_for_file: public_member_api_docs
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
+import 'package:kiss_drift_repository/src/connection/connection.dart';
 import 'package:kiss_repository/kiss_repository.dart' as kiss;
-import 'package:kiss_repository_tests/kiss_repository_tests.dart';
 import 'package:uuid/uuid.dart';
 
 part 'repository_drift.g.dart';
@@ -23,13 +23,13 @@ class Items extends Table {
 
 @DriftDatabase(tables: [Items])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase(QueryExecutor e) : super(e);
+  AppDatabase([String? databasePath]) : super(connect(databasePath));
 
   @override
   int get schemaVersion => 1;
 }
 
-/// A Drift implementation of the Repository interface.
+/// A Drift implementation of the KISS Repository interface.
 ///
 /// This implementation uses SQLite through Drift for local data persistence
 /// with type-safe database operations and real-time streaming capabilities.
@@ -53,11 +53,10 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     required String tableName,
     required Map<String, Object?> Function(T) toDrift,
     required T Function(Map<String, Object?>) fromDrift,
-    kiss.QueryBuilder<String>? queryBuilder,
+    kiss.QueryBuilder<bool Function(T)?>? queryBuilder,
     String? databasePath,
   }) async {
-    final executor = _createExecutor(databasePath);
-    final database = AppDatabase(executor);
+    final database = AppDatabase(databasePath);
 
     return RepositoryDrift<T>._(
       database: database,
@@ -72,28 +71,12 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   final String tableName;
   final Map<String, Object?> Function(T) toDrift;
   final T Function(Map<String, Object?>) fromDrift;
-  final kiss.QueryBuilder<String>? queryBuilder;
+  final kiss.QueryBuilder<bool Function(T)?>? queryBuilder;
   final _uuid = const Uuid();
 
   @override
   String? get path => tableName;
 
-  static QueryExecutor _createExecutor(String? databasePath) {
-    // Use in-memory database for tests
-    if (databasePath == ':memory:') {
-      return NativeDatabase.memory();
-    }
-
-    if (databasePath != null) {
-      return NativeDatabase(File(databasePath));
-    }
-
-    // Default database location in current directory for simplicity
-    final file = File('drift_repository.db');
-    return NativeDatabase(file);
-  }
-
-  // Repository interface implementation
   @override
   Future<T> get(String id) async {
     final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
@@ -110,7 +93,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Stream<T> stream(String id) {
     final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
-    bool hasEmittedData = false;
+    var hasEmittedData = false;
 
     return query.watchSingleOrNull().transform(
       StreamTransformer<Item?, T>.fromHandlers(
@@ -147,19 +130,53 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
       return fromDrift(jsonData);
     }).toList();
 
-    // If it's AllQuery, return everything
+    // Handle AllQuery - return all objects
     if (query is kiss.AllQuery) {
       return allObjects;
     }
 
-    // Apply client-side filtering for custom queries
-    return _applyQueryFilter(allObjects, query);
+    // Handle custom queries using query builder
+    if (queryBuilder == null) {
+      throw kiss.RepositoryException(message: 'Query builder required for custom queries');
+    }
+
+    final filter = queryBuilder!.build(query);
+    if (filter == null) {
+      return allObjects;
+    }
+
+    // Apply client-side filtering using the filter function
+    return allObjects.where(filter).toList();
   }
 
   @override
   Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) async* {
     final selectQuery = database.select(database.items);
+    
+    // First, emit the current state immediately
+    try {
+      final currentResults = await selectQuery.get();
+      final currentObjects = currentResults.map((result) {
+        final jsonData = jsonDecode(result.data) as Map<String, Object?>;
+        return fromDrift(jsonData);
+      }).toList();
+      
+      // Apply filtering and emit initial state
+      if (query is kiss.AllQuery) {
+        yield currentObjects;
+      } else {
+        if (queryBuilder == null) {
+          throw kiss.RepositoryException(message: 'Query builder required for custom queries');
+        }
+        final filter = queryBuilder!.build(query);
+        yield filter == null ? currentObjects : currentObjects.where(filter).toList();
+      }
+    } catch (e) {
+      // If initial query fails, emit empty list
+      yield <T>[];
+    }
 
+    // Then watch for changes and emit them
     await for (final results in selectQuery.watch()) {
       // Convert all results to objects first
       final allObjects = results.map((result) {
@@ -167,13 +184,25 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
         return fromDrift(jsonData);
       }).toList();
 
-      // If it's AllQuery, return everything
+      // Handle AllQuery - yield all objects
       if (query is kiss.AllQuery) {
         yield allObjects;
-      } else {
-        // Apply client-side filtering for custom queries
-        yield _applyQueryFilter(allObjects, query);
+        continue;
       }
+
+      // Handle custom queries using query builder
+      if (queryBuilder == null) {
+        throw kiss.RepositoryException(message: 'Query builder required for custom queries');
+      }
+
+      final filter = queryBuilder!.build(query);
+      if (filter == null) {
+        yield allObjects;
+        continue;
+      }
+
+      // Apply client-side filtering using the filter function
+      yield allObjects.where(filter).toList();
     }
   }
 
@@ -186,7 +215,12 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
       await database
           .into(database.items)
           .insert(
-            ItemsCompanion(id: Value(item.id), data: Value(jsonData), createdAt: Value(now), updatedAt: Value(now)),
+            ItemsCompanion(
+              id: Value(item.id), 
+              data: Value(jsonData), 
+              createdAt: Value(now), 
+              updatedAt: Value(now),
+            ),
           );
       return item.object;
     } catch (e) {
@@ -199,16 +233,16 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Future<T> update(String id, T Function(T current) updater) async {
-    return await database.transaction(() async {
-      // Get current item
-      final current = await get(id);
+    return database.transaction(() async {
 
-      // Apply update
+      final current = await get(id);
       final updated = updater(current);
 
       // Save updated item
       final jsonData = jsonEncode(toDrift(updated));
-      final updateQuery = database.update(database.items)..where((tbl) => tbl.id.equals(id));
+      final updateQuery = database
+        .update(database.items)
+        ..where((tbl) => tbl.id.equals(id));
 
       final rowsAffected = await updateQuery.write(
         ItemsCompanion(data: Value(jsonData), updatedAt: Value(DateTime.now())),
@@ -229,16 +263,10 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     // Don't throw exception if item doesn't exist - delete should be idempotent
   }
 
-  @override
   Future<bool> exists(String id) async {
     final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
     final result = await query.getSingleOrNull();
     return result != null;
-  }
-
-  @override
-  Future<void> close() async {
-    await database.close();
   }
 
   // Batch operations - Fixed parameter types
@@ -273,13 +301,10 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     });
   }
 
-  // Auto-identify functionality - Added missing methods
-  @override
-  String generateId() => _uuid.v4();
 
   @override
   kiss.IdentifiedObject<T> autoIdentify(T object, {T Function(T object, String id)? updateObjectWithId}) {
-    final id = generateId();
+    final id = _uuid.v4();
     final updatedObject = updateObjectWithId?.call(object, id) ?? object;
     return kiss.IdentifiedObject(id, updatedObject);
   }
@@ -290,38 +315,10 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     return await add(identifiedObject);
   }
 
+
   @override
   void dispose() {
     // Close the database connection
     database.close();
-  }
-
-  // Helper method to apply query filters client-side
-  List<T> _applyQueryFilter(List<T> objects, kiss.Query query) {
-    // We need to cast T to ProductModel to access its properties for filtering
-    // This is a limitation of the generic approach, but works for our test case
-    if (T == ProductModel) {
-      final products = objects.cast<ProductModel>();
-      List<ProductModel> filtered = [];
-
-      if (query is QueryByName) {
-        filtered = products.where((p) => p.name.startsWith(query.namePrefix)).toList();
-      } else if (query is QueryByPriceGreaterThan) {
-        filtered = products.where((p) => p.price > query.price).toList();
-      } else if (query is QueryByPriceLessThan) {
-        filtered = products.where((p) => p.price < query.price).toList();
-      } else if (query is QueryByCreatedAfter) {
-        filtered = products.where((p) => p.created.isAfter(query.date)).toList();
-      } else if (query is QueryByCreatedBefore) {
-        filtered = products.where((p) => p.created.isBefore(query.date)).toList();
-      } else {
-        filtered = products; // Unknown query type, return all
-      }
-
-      return filtered.cast<T>();
-    }
-
-    // For non-ProductModel types, return all objects (fallback)
-    return objects;
   }
 }

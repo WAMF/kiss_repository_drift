@@ -1,27 +1,57 @@
-# KISS Drift Repository
+# Kiss Drift Repository
 
-A [Drift](https://drift.simonbinder.eu/) (SQLite) implementation of the [KISS Repository](https://github.com/WAMF/kiss_repository) interface. This package provides a local, embedded database solution using SQLite with Drift's type-safe query builder.
+A Drift implementation of the `kiss_repository` interface for local SQLite database storage.
+
+## Platform Support
+
+✅ **Supported Platforms:**
+- iOS
+- Android  
+- macOS
+- Windows
+- Linux
+- **Web** (requires manual WASM setup)
+
+📡 **Web Setup:**
+On web platforms, you need to include SQLite WASM files in your `web/` directory:
+
+**Required files:**
+- `sqlite3.wasm` - Download from [sqlite3.dart releases](https://github.com/simolus3/sqlite3.dart/releases)
+- `drift_worker.dart.js` - Compile manually (see setup below)
+
+**Setup steps:**
+1. Download `sqlite3.wasm`:
+   ```bash
+   curl -L -o web/sqlite3.wasm https://github.com/simolus3/sqlite3.dart/releases/latest/download/sqlite3.wasm
+   ```
+
+2. Create `web/drift_worker.dart`:
+   ```dart
+   import 'package:drift/wasm.dart';
+   
+   void main() => WasmDatabase.workerMainForOpen();
+   ```
+
+3. Compile the worker:
+   ```bash
+   dart compile js -O4 web/drift_worker.dart -o web/drift_worker.dart.js
+   ```
+
+**Alternative:** For easier web support without manual setup, consider using `kiss_firebase_repository` or `kiss_pocketbase_repository`.
 
 ## Features
 
-- ✅ **Embedded SQLite Database** - No external server required
-- ✅ **Type-Safe Queries** - Drift's compile-time query validation
-- ✅ **Fast Local Storage** - SQLite performance with in-memory or file-based storage
-- ✅ **Cross-Platform** - Works on all Dart/Flutter platforms
-- ✅ **Auto-Generated Code** - Drift handles table definitions and queries
-- ✅ **ACID Transactions** - Full SQLite transaction support
+- Local SQLite database with cross-platform support
+- Type-safe operations and real-time streaming
+- Automatic migrations and batch operations
 
 ## Installation
 
-Add this package to your `pubspec.yaml`:
+Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
   kiss_drift_repository: ^0.1.0
-  
-dev_dependencies:
-  drift_dev: ^2.27.0
-  build_runner: ^2.4.0
 ```
 
 ## Usage
@@ -29,57 +59,25 @@ dev_dependencies:
 ```dart
 import 'package:kiss_drift_repository/kiss_drift_repository.dart';
 
-// Create repository with file-based storage
+// Create repository
 final repository = await RepositoryDrift.create<MyModel>(
   tableName: 'my_models',
-  databasePath: 'my_app.db', // Or ':memory:' for in-memory
-  toDrift: (model) => {
-    'id': model.id,
-    'name': model.name,
-    'data': model.data,
-  },
-  fromDrift: (json) => MyModel(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    data: json['data'] as String,
-  ),
-  queryBuilder: MyQueryBuilder(),
+  toDrift: (model) => model.toJson(),
+  fromDrift: (json) => MyModel.fromJson(json),
 );
 
-// Use standard Repository interface
-final item = await repository.add(IdentifiedObject('1', myModel));
-final retrieved = await repository.get('1');
+// Use standard kiss_repository interface
+await repository.add(IdentifiedObject('id1', myModel));
+final model = await repository.get('id1');
 ```
 
-## Development Setup
+## Development
 
-### Prerequisites
-- Dart SDK 3.8.0 or higher
-- No external database server required!
-
-### Running Tests
-
-Drift uses embedded SQLite, so no external emulator is needed:
-
+Run tests:
 ```bash
-# Install dependencies and generate code
 ./scripts/run_tests.sh
 ```
 
-Or manually:
-```bash
-dart pub get
-dart run build_runner build --delete-conflicting-outputs
-dart test
-```
-
-## Architecture
-
-- **Storage**: SQLite database (file-based or in-memory)
-- **ORM**: Drift for type-safe database operations
-- **Code Generation**: Drift generates table definitions and queries
-- **Transactions**: Full ACID transaction support via SQLite
-
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
