@@ -126,20 +126,51 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   }
 
   @override
-  Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) async* {
+  Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) {
     final selectQuery = database.select(database.items);
     final toObjects = (List<Item> rows) => rows.map((result) {
       final jsonData = jsonDecode(result.data) as Map<String, Object?>;
       return fromDrift(jsonData);
     }).toList();
 
-    yield* selectQuery.watch().map((rows) {
-      final all = toObjects(rows);
-      if (query is kiss.AllQuery) return all;
-      if (queryBuilder == null) throw kiss.RepositoryException(message: 'Query builder required');
-      final filter = queryBuilder!.build(query);
-      return filter == null ? all : all.where(filter).toList();
+    final controller = StreamController<List<T>>();
+    
+    // First, emit current state
+    selectQuery.get().then((initial) {
+      final initialObjects = toObjects(initial);
+      if (query is kiss.AllQuery) {
+        controller.add(initialObjects);
+      } else {
+        if (queryBuilder == null) {
+          controller.addError(kiss.RepositoryException(message: 'Query builder required'));
+          return;
+        }
+        final filter = queryBuilder!.build(query);
+        controller.add(filter == null ? initialObjects : initialObjects.where(filter).toList());
+      }
     });
+
+    // Then watch for changes
+    late StreamSubscription watchSub;
+    watchSub = selectQuery.watch().listen((rows) {
+      final all = toObjects(rows);
+      if (query is kiss.AllQuery) {
+        controller.add(all);
+      } else {
+        if (queryBuilder == null) {
+          controller.addError(kiss.RepositoryException(message: 'Query builder required'));
+          return;
+        }
+        final filter = queryBuilder!.build(query);
+        controller.add(filter == null ? all : all.where(filter).toList());
+      }
+    });
+
+    controller.onCancel = () {
+      watchSub.cancel();
+    };
+
+    return controller.stream;
   }
 
   @override
