@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:drift/drift.dart';
 import 'package:kiss_drift_repository/src/connection/connection.dart';
 import 'package:kiss_drift_repository/src/drift_identified_object.dart';
@@ -10,7 +9,6 @@ import 'package:kiss_repository/kiss_repository.dart' as kiss;
 
 part 'repository_drift.g.dart';
 
-// Define the generic items table
 class Items extends Table {
   TextColumn get id => text()();
   TextColumn get data => text()();
@@ -24,7 +22,6 @@ class Items extends Table {
 @DriftDatabase(tables: [Items])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([String? databasePath]) : super(connect(databasePath));
-
   @override
   int get schemaVersion => 1;
 }
@@ -78,9 +75,10 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Future<T> get(String id) async {
-    final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
+    final result = await (database.select(database.items)
+      ..where((tbl) => tbl.id.equals(id)))
+      .getSingleOrNull();
 
-    final result = await query.getSingleOrNull();
     if (result == null) {
       throw kiss.RepositoryException.notFound(id);
     }
@@ -92,135 +90,70 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Stream<T> stream(String id) {
     final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
-    var hasEmittedData = false;
+    var emitted = false;
 
-    return query.watchSingleOrNull().transform(
-      StreamTransformer<Item?, T>.fromHandlers(
-        handleData: (result, sink) {
-          if (result == null) {
-            if (!hasEmittedData) {
-              // Document doesn't exist initially - emit error
-              sink.addError(kiss.RepositoryException.notFound(id));
-            } else {
-              // Document was deleted after existing - close the stream
-              sink.close();
-            }
+    return query.watchSingleOrNull().transform(StreamTransformer<Item?, T>.fromHandlers(
+      handleData: (result, sink) {
+        if (result == null) {
+          if (!emitted) {
+            sink.addError(kiss.RepositoryException.notFound(id));
           } else {
-            hasEmittedData = true;
-            final jsonData = jsonDecode(result.data) as Map<String, Object?>;
-            sink.add(fromDrift(jsonData));
+            sink.close();
           }
-        },
-        handleError: (error, stackTrace, sink) {
-          sink.addError(kiss.RepositoryException.notFound(id));
-        },
-      ),
-    );
+        } else {
+          emitted = true;
+          final jsonData = jsonDecode(result.data) as Map<String, Object?>;
+          sink.add(fromDrift(jsonData));
+        }
+      },
+      handleError: (_, __, sink) => sink.addError(kiss.RepositoryException.notFound(id)),
+    ));
   }
 
   @override
   Future<List<T>> query({kiss.Query query = const kiss.AllQuery()}) async {
-    final selectQuery = database.select(database.items);
-    final results = await selectQuery.get();
-
-    // Convert all results to objects first
-    final allObjects = results.map((result) {
+    final results = await database.select(database.items).get();
+    final all = results.map((result) {
       final jsonData = jsonDecode(result.data) as Map<String, Object?>;
       return fromDrift(jsonData);
     }).toList();
 
-    // Handle AllQuery - return all objects
-    if (query is kiss.AllQuery) {
-      return allObjects;
-    }
-
-    // Handle custom queries using query builder
-    if (queryBuilder == null) {
-      throw kiss.RepositoryException(message: 'Query builder required for custom queries');
-    }
+    if (query is kiss.AllQuery) return all;
+    if (queryBuilder == null) throw kiss.RepositoryException(message: 'Query builder required');
 
     final filter = queryBuilder!.build(query);
-    if (filter == null) {
-      return allObjects;
-    }
-
-    // Apply client-side filtering using the filter function
-    return allObjects.where(filter).toList();
+    return filter == null ? all : all.where(filter).toList();
   }
 
   @override
   Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) async* {
     final selectQuery = database.select(database.items);
-    
-    // First, emit the current state immediately
-    try {
-      final currentResults = await selectQuery.get();
-      final currentObjects = currentResults.map((result) {
-        final jsonData = jsonDecode(result.data) as Map<String, Object?>;
-        return fromDrift(jsonData);
-      }).toList();
-      
-      // Apply filtering and emit initial state
-      if (query is kiss.AllQuery) {
-        yield currentObjects;
-      } else {
-        if (queryBuilder == null) {
-          throw kiss.RepositoryException(message: 'Query builder required for custom queries');
-        }
-        final filter = queryBuilder!.build(query);
-        yield filter == null ? currentObjects : currentObjects.where(filter).toList();
-      }
-    } catch (e) {
-      // If initial query fails, emit empty list
-      yield <T>[];
-    }
+    final toObjects = (List<Item> rows) => rows.map((result) {
+      final jsonData = jsonDecode(result.data) as Map<String, Object?>;
+      return fromDrift(jsonData);
+    }).toList();
 
-    // Then watch for changes and emit them
-    await for (final results in selectQuery.watch()) {
-      // Convert all results to objects first
-      final allObjects = results.map((result) {
-        final jsonData = jsonDecode(result.data) as Map<String, Object?>;
-        return fromDrift(jsonData);
-      }).toList();
-
-      // Handle AllQuery - yield all objects
-      if (query is kiss.AllQuery) {
-        yield allObjects;
-        continue;
-      }
-
-      // Handle custom queries using query builder
-      if (queryBuilder == null) {
-        throw kiss.RepositoryException(message: 'Query builder required for custom queries');
-      }
-
+    yield* selectQuery.watch().map((rows) {
+      final all = toObjects(rows);
+      if (query is kiss.AllQuery) return all;
+      if (queryBuilder == null) throw kiss.RepositoryException(message: 'Query builder required');
       final filter = queryBuilder!.build(query);
-      if (filter == null) {
-        yield allObjects;
-        continue;
-      }
-
-      // Apply client-side filtering using the filter function
-      yield allObjects.where(filter).toList();
-    }
+      return filter == null ? all : all.where(filter).toList();
+    });
   }
 
   @override
   Future<T> add(kiss.IdentifiedObject<T> item) async {
-    final jsonData = jsonEncode(toDrift(item.object));
+    final json = jsonEncode(toDrift(item.object));
     final now = DateTime.now();
 
     try {
-      await database
-          .into(database.items)
-          .insert(
-            ItemsCompanion(
-              id: Value(item.id), 
-              data: Value(jsonData), 
-              createdAt: Value(now), 
-              updatedAt: Value(now),
-            ),
-          );
+      await database.into(database.items).insert(ItemsCompanion(
+        id: Value(item.id),
+        data: Value(json),
+        createdAt: Value(now),
+        updatedAt: Value(now),
+      ));
       return item.object;
     } catch (e) {
       if (e.toString().contains('UNIQUE constraint failed')) {
@@ -233,89 +166,44 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Future<T> update(String id, T Function(T current) updater) async {
     return database.transaction(() async {
-
       final current = await get(id);
       final updated = updater(current);
+      final json = jsonEncode(toDrift(updated));
 
-      // Save updated item
-      final jsonData = jsonEncode(toDrift(updated));
-      final updateQuery = database
-        .update(database.items)
-        ..where((tbl) => tbl.id.equals(id));
+      final rows = await (database.update(database.items)
+        ..where((tbl) => tbl.id.equals(id)))
+          .write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
 
-      final rowsAffected = await updateQuery.write(
-        ItemsCompanion(data: Value(jsonData), updatedAt: Value(DateTime.now())),
-      );
-
-      if (rowsAffected == 0) {
-        throw kiss.RepositoryException.notFound(id);
-      }
-
+      if (rows == 0) throw kiss.RepositoryException.notFound(id);
       return updated;
     });
   }
 
   @override
   Future<void> delete(String id) async {
-    final deleteQuery = database.delete(database.items)..where((tbl) => tbl.id.equals(id));
-    await deleteQuery.go();
-    // Don't throw exception if item doesn't exist - delete should be idempotent
-  }
-
-  Future<bool> exists(String id) async {
-    final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
-    final result = await query.getSingleOrNull();
-    return result != null;
-  }
-
-  // Batch operations - Fixed parameter types
-  @override
-  Future<Iterable<T>> addAll(Iterable<kiss.IdentifiedObject<T>> items) async {
-    return await database.transaction(() async {
-      final results = <T>[];
-      for (final item in items) {
-        results.add(await add(item));
-      }
-      return results;
-    });
+    await (database.delete(database.items)..where((tbl) => tbl.id.equals(id))).go();
   }
 
   @override
-  Future<void> deleteAll(Iterable<String> ids) async {
-    await database.transaction(() async {
-      for (final id in ids) {
-        await delete(id); // Now safe since delete doesn't throw for non-existent items
-      }
-    });
-  }
+  Future<Iterable<T>> addAll(Iterable<kiss.IdentifiedObject<T>> items) async =>
+      await database.transaction(() async => [for (final i in items) await add(i)]);
 
   @override
-  Future<Iterable<T>> updateAll(Iterable<kiss.IdentifiedObject<T>> items) async {
-    return await database.transaction(() async {
-      final results = <T>[];
-      for (final item in items) {
-        results.add(await update(item.id, (_) => item.object));
-      }
-      return results;
-    });
-  }
-
+  Future<void> deleteAll(Iterable<String> ids) async =>
+      await database.transaction(() async => [for (final id in ids) await delete(id)]);
 
   @override
-  kiss.IdentifiedObject<T> autoIdentify(T object, {T Function(T object, String id)? updateObjectWithId}) {
-    return DriftIdentifiedObject(object, updateObjectWithId ?? (object, id) => object);
-  }
+  Future<Iterable<T>> updateAll(Iterable<kiss.IdentifiedObject<T>> items) async =>
+      await database.transaction(() async => [for (final i in items) await update(i.id, (_) => i.object)]);
 
   @override
-  Future<T> addAutoIdentified(T object, {T Function(T object, String id)? updateObjectWithId}) async {
-    final identifiedObject = autoIdentify(object, updateObjectWithId: updateObjectWithId);
-    return await add(identifiedObject);
-  }
-
+  kiss.IdentifiedObject<T> autoIdentify(T object, {T Function(T object, String id)? updateObjectWithId}) =>
+      DriftIdentifiedObject(object, updateObjectWithId ?? (o, _) => o);
 
   @override
-  void dispose() {
-    // Close the database connection
-    database.close();
-  }
+  Future<T> addAutoIdentified(T object, {T Function(T object, String id)? updateObjectWithId}) async =>
+      await add(autoIdentify(object, updateObjectWithId: updateObjectWithId));
+
+  @override
+  void dispose() => database.close();
 }
