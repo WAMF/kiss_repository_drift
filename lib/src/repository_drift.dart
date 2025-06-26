@@ -92,22 +92,24 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
     var emitted = false;
 
-    return query.watchSingleOrNull().transform(StreamTransformer<Item?, T>.fromHandlers(
-      handleData: (result, sink) {
-        if (result == null) {
-          if (!emitted) {
-            sink.addError(kiss.RepositoryException.notFound(id));
+    return query.watchSingleOrNull().transform(
+      StreamTransformer<Item?, T>.fromHandlers(
+        handleData: (result, sink) {
+          if (result == null) {
+            if (!emitted) {
+              sink.addError(kiss.RepositoryException.notFound(id));
+            } else {
+              sink.close();
+            }
           } else {
-            sink.close();
+            emitted = true;
+            final jsonData = jsonDecode(result.data) as Map<String, Object?>;
+            sink.add(fromDrift(jsonData));
           }
-        } else {
-          emitted = true;
-          final jsonData = jsonDecode(result.data) as Map<String, Object?>;
-          sink.add(fromDrift(jsonData));
-        }
-      },
-      handleError: (_, __, sink) => sink.addError(kiss.RepositoryException.notFound(id)),
-    ));
+        },
+        handleError: (_, __, sink) => sink.addError(kiss.RepositoryException.notFound(id)),
+      ),
+    );
   }
 
   @override
@@ -128,49 +130,23 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) {
     final selectQuery = database.select(database.items);
-    final toObjects = (List<Item> rows) => rows.map((result) {
-      final jsonData = jsonDecode(result.data) as Map<String, Object?>;
-      return fromDrift(jsonData);
-    }).toList();
 
-    final controller = StreamController<List<T>>();
-    
-    // First, emit current state
-    selectQuery.get().then((initial) {
-      final initialObjects = toObjects(initial);
-      if (query is kiss.AllQuery) {
-        controller.add(initialObjects);
-      } else {
-        if (queryBuilder == null) {
-          controller.addError(kiss.RepositoryException(message: 'Query builder required'));
-          return;
-        }
-        final filter = queryBuilder!.build(query);
-        controller.add(filter == null ? initialObjects : initialObjects.where(filter).toList());
-      }
+    return selectQuery.watch().map((rows) {
+      final objects = rows.map((row) {
+        final json = jsonDecode(row.data) as Map<String, Object?>;
+        return fromDrift(json);
+      }).toList();
+      return _applyQueryFilter(query, objects);
     });
+  }
 
-    // Then watch for changes
-    late StreamSubscription watchSub;
-    watchSub = selectQuery.watch().listen((rows) {
-      final all = toObjects(rows);
-      if (query is kiss.AllQuery) {
-        controller.add(all);
-      } else {
-        if (queryBuilder == null) {
-          controller.addError(kiss.RepositoryException(message: 'Query builder required'));
-          return;
-        }
-        final filter = queryBuilder!.build(query);
-        controller.add(filter == null ? all : all.where(filter).toList());
-      }
-    });
-
-    controller.onCancel = () {
-      watchSub.cancel();
-    };
-
-    return controller.stream;
+  List<T> _applyQueryFilter(kiss.Query query, List<T> items) {
+    if (query is kiss.AllQuery) return items;
+    if (queryBuilder == null) {
+      throw kiss.RepositoryException(message: 'Query builder required for custom queries');
+    }
+    final filter = queryBuilder!.build(query);
+    return filter == null ? items : items.where(filter).toList();
   }
 
   @override
@@ -201,9 +177,9 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
       final updated = updater(current);
       final json = jsonEncode(toDrift(updated));
 
-      final rows = await (database.update(database.items)
-        ..where((tbl) => tbl.id.equals(id)))
-          .write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
+      final rows = await (database.update(
+        database.items,
+      )..where((tbl) => tbl.id.equals(id))).write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
 
       if (rows == 0) throw kiss.RepositoryException.notFound(id);
       return updated;
