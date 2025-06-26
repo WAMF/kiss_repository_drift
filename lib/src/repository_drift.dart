@@ -5,8 +5,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:kiss_drift_repository/src/connection/connection.dart';
+import 'package:kiss_drift_repository/src/drift_identified_object.dart';
 import 'package:kiss_repository/kiss_repository.dart' as kiss;
-import 'package:uuid/uuid.dart';
 
 part 'repository_drift.g.dart';
 
@@ -72,7 +72,6 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   final Map<String, Object?> Function(T) toDrift;
   final T Function(Map<String, Object?>) fromDrift;
   final kiss.QueryBuilder<bool Function(T)?>? queryBuilder;
-  final _uuid = const Uuid();
 
   @override
   String? get path => tableName;
@@ -304,9 +303,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   kiss.IdentifiedObject<T> autoIdentify(T object, {T Function(T object, String id)? updateObjectWithId}) {
-    final id = _uuid.v4();
-    final updatedObject = updateObjectWithId?.call(object, id) ?? object;
-    return kiss.IdentifiedObject(id, updatedObject);
+    return DriftIdentifiedObject(object, updateObjectWithId ?? (object, id) => object);
   }
 
   @override
