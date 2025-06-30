@@ -1,8 +1,8 @@
 // ignore_for_file: avoid_print
 
+import 'package:kiss_drift_repository/kiss_drift_repository.dart';
 import 'package:kiss_repository/kiss_repository.dart';
 import 'package:kiss_repository_tests/kiss_repository_tests.dart';
-import 'package:kiss_drift_repository/kiss_drift_repository.dart';
 
 import 'drift_query_builder.dart';
 
@@ -21,11 +21,11 @@ class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
         'created': model.created.toIso8601String(),
       },
       fromDrift: (json) => ProductModel(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        price: (json['price'] as num).toDouble(),
+        id: json['id']! as String,
+        name: json['name']! as String,
+        price: (json['price']! as num).toDouble(),
         description: json['description'] as String? ?? '',
-        created: DateTime.parse(json['created'] as String),
+        created: DateTime.parse(json['created']! as String),
       ),
       queryBuilder: DriftQueryBuilder(),
       databasePath: ':memory:', // Use in-memory database for tests

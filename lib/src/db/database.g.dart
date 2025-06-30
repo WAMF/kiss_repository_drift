@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'repository_drift.dart';
+part of 'database.dart';
 
 // ignore_for_file: type=lint
 class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {

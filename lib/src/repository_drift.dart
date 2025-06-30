@@ -2,29 +2,11 @@
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:drift/drift.dart';
-import 'package:kiss_drift_repository/src/connection/connection.dart';
+import 'package:kiss_drift_repository/src/db/database.dart';
 import 'package:kiss_drift_repository/src/drift_identified_object.dart';
 import 'package:kiss_repository/kiss_repository.dart' as kiss;
-
-part 'repository_drift.g.dart';
-
-class Items extends Table {
-  TextColumn get id => text()();
-  TextColumn get data => text()();
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
-  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
-
-  @override
-  Set<Column> get primaryKey => {id};
-}
-
-@DriftDatabase(tables: [Items])
-class AppDatabase extends _$AppDatabase {
-  AppDatabase([String? databasePath]) : super(connect(databasePath));
-  @override
-  int get schemaVersion => 1;
-}
 
 /// A Drift implementation of the KISS Repository interface.
 ///
@@ -50,7 +32,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     required String tableName,
     required Map<String, Object?> Function(T) toDrift,
     required T Function(Map<String, Object?>) fromDrift,
-    kiss.QueryBuilder<bool Function(T)?>? queryBuilder,
+    kiss.QueryBuilder<Expression<bool>?>? queryBuilder,
     String? databasePath,
   }) async {
     final database = AppDatabase(databasePath);
@@ -68,7 +50,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   final String tableName;
   final Map<String, Object?> Function(T) toDrift;
   final T Function(Map<String, Object?>) fromDrift;
-  final kiss.QueryBuilder<bool Function(T)?>? queryBuilder;
+  final kiss.QueryBuilder<Expression<bool>?>? queryBuilder;
 
   @override
   String? get path => tableName;
@@ -76,8 +58,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Future<T> get(String id) async {
     final result = await (database.select(database.items)
-      ..where((tbl) => tbl.id.equals(id)))
-      .getSingleOrNull();
+      ..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
 
     if (result == null) {
       throw kiss.RepositoryException.notFound(id);
@@ -89,7 +70,8 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Stream<T> stream(String id) {
-    final query = database.select(database.items)..where((tbl) => tbl.id.equals(id));
+    final query = database.select(database.items)
+      ..where((tbl) => tbl.id.equals(id));
     var emitted = false;
 
     return query.watchSingleOrNull().transform(
@@ -114,39 +96,40 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Future<List<T>> query({kiss.Query query = const kiss.AllQuery()}) async {
-    final results = await database.select(database.items).get();
-    final all = results.map((result) {
+    final selectQuery = database.select(database.items);
+
+    // Apply SQL-level filtering if we have a query builder and it's not AllQuery
+    if (query is! kiss.AllQuery && queryBuilder != null) {
+      final whereExpression = queryBuilder!.build(query);
+      if (whereExpression != null) {
+        selectQuery.where((tbl) => whereExpression);
+      }
+    }
+
+    final results = await selectQuery.get();
+    return results.map((result) {
       final jsonData = jsonDecode(result.data) as Map<String, Object?>;
       return fromDrift(jsonData);
     }).toList();
-
-    if (query is kiss.AllQuery) return all;
-    if (queryBuilder == null) throw kiss.RepositoryException(message: 'Query builder required');
-
-    final filter = queryBuilder!.build(query);
-    return filter == null ? all : all.where(filter).toList();
   }
 
   @override
   Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) {
     final selectQuery = database.select(database.items);
 
+    if (query is! kiss.AllQuery && queryBuilder != null) {
+      final whereExpression = queryBuilder!.build(query);
+      if (whereExpression != null) {
+        selectQuery.where((tbl) => whereExpression);
+      }
+    }
+
     return selectQuery.watch().map((rows) {
-      final objects = rows.map((row) {
+      return rows.map((row) {
         final json = jsonDecode(row.data) as Map<String, Object?>;
         return fromDrift(json);
       }).toList();
-      return _applyQueryFilter(query, objects);
     });
-  }
-
-  List<T> _applyQueryFilter(kiss.Query query, List<T> items) {
-    if (query is kiss.AllQuery) return items;
-    if (queryBuilder == null) {
-      throw kiss.RepositoryException(message: 'Query builder required for custom queries');
-    }
-    final filter = queryBuilder!.build(query);
-    return filter == null ? items : items.where(filter).toList();
   }
 
   @override
@@ -155,11 +138,13 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     final now = DateTime.now();
 
     try {
-      await database.into(database.items).insert(ItemsCompanion(
-        id: Value(item.id),
-        data: Value(json),
-        createdAt: Value(now),
-        updatedAt: Value(now),
+      await database
+          .into(database.items)
+          .insert(ItemsCompanion(
+            id: Value(item.id),
+            data: Value(json),
+            createdAt: Value(now),
+            updatedAt: Value(now),
       ));
       return item.object;
     } catch (e) {
@@ -179,7 +164,8 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
       final rows = await (database.update(
         database.items,
-      )..where((tbl) => tbl.id.equals(id))).write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
+      )
+        ..where((tbl) => tbl.id.equals(id))).write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
 
       if (rows == 0) throw kiss.RepositoryException.notFound(id);
       return updated;
@@ -188,7 +174,8 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Future<void> delete(String id) async {
-    await (database.delete(database.items)..where((tbl) => tbl.id.equals(id))).go();
+    await (database.delete(database.items)
+      ..where((tbl) => tbl.id.equals(id))).go();
   }
 
   @override
