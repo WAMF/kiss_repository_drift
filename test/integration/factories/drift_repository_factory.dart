@@ -27,8 +27,8 @@ class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
         description: json['description'] as String? ?? '',
         created: DateTime.parse(json['created']! as String),
       ),
-      queryBuilder: DriftQueryBuilder(),
-      databasePath: ':memory:', // Use in-memory database for tests
+      queryBuilder: const DriftQueryBuilder(),
+      databasePath: ':memory:',
     );
     return _repository!;
   }
