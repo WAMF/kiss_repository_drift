@@ -4,9 +4,9 @@ import 'package:kiss_drift_repository/kiss_drift_repository.dart';
 import 'package:kiss_repository/kiss_repository.dart';
 import 'package:kiss_repository_tests/kiss_repository_tests.dart';
 
-import 'drift_query_builder.dart';
+import 'drift_test_query_builder.dart';
 
-class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
+class DriftTestRepositoryFactory implements RepositoryFactory<ProductModel> {
   Repository<ProductModel>? _repository;
 
   @override
@@ -27,7 +27,7 @@ class DriftRepositoryFactory implements RepositoryFactory<ProductModel> {
         description: json['description'] as String? ?? '',
         created: DateTime.parse(json['created']! as String),
       ),
-      queryBuilder: const DriftQueryBuilder(),
+      queryBuilder: const DriftTestQueryBuilder(),
       databasePath: ':memory:',
     );
     return _repository!;

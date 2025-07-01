@@ -2,8 +2,8 @@ import 'package:drift/drift.dart';
 import 'package:kiss_repository/kiss_repository.dart' as kiss;
 import 'package:kiss_repository_tests/kiss_repository_tests.dart';
 
-class DriftQueryBuilder implements kiss.QueryBuilder<Expression<bool>?> {
-  const DriftQueryBuilder();
+class DriftTestQueryBuilder implements kiss.QueryBuilder<Expression<bool>?> {
+  const DriftTestQueryBuilder();
 
   @override
   Expression<bool>? build(kiss.Query query) {
