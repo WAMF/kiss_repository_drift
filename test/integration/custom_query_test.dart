@@ -133,7 +133,7 @@ void main() {
       final subscription = expensiveStream.listen(streamEvents.add);
 
       // Wait for initial stream event
-      await Future.delayed(Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
       // Initial state should have 1 expensive product
       expect(streamEvents.isNotEmpty, isTrue);
@@ -151,7 +151,7 @@ void main() {
       );
 
       await product1Repo.add(IdentifiedObject(anotherExpensive.id, anotherExpensive));
-      await Future.delayed(Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
       // Stream should now have 2 expensive products
       expect(streamEvents.length, greaterThan(1));
@@ -161,7 +161,6 @@ void main() {
       expect(prices, equals([150.0, 200.0]));
 
       // Add a cheap product - should NOT trigger the expensive products stream
-      final eventCountBefore = streamEvents.length;
       final anotherCheap = ProductModel(
         id: 'cheap2',
         name: 'Another Cheap',
@@ -171,11 +170,10 @@ void main() {
       );
 
       await product1Repo.add(IdentifiedObject(anotherCheap.id, anotherCheap));
-      await Future.delayed(Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
       // Stream events should not have increased (cheap product doesn't match filter)
       // Note: This tests if the raw SQL WHERE clause is actually working in streaming
-      final eventCountAfter = streamEvents.length;
       final finalEvent = streamEvents.last;
       expect(finalEvent, hasLength(2)); // Still only 2 expensive products
       
@@ -187,7 +185,7 @@ void main() {
         description: current.description,
         created: current.created,
       ));
-      await Future.delayed(Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
       // Stream should now have only 1 expensive product
       final afterUpdateEvent = streamEvents.last;

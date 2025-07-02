@@ -29,7 +29,7 @@ class DriftTestRepositoryFactory implements RepositoryFactory<ProductModel> {
         description: json['description'] as String? ?? '',
         created: DateTime.parse(json['created']! as String),
       ),
-      queryBuilder: DriftTestQueryBuilder(),
+      queryBuilder: const DriftTestQueryBuilder(),
       database: database,
     );
     return _repository!;

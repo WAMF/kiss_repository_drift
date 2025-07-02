@@ -6,8 +6,8 @@ import 'multi_collection_test.dart' as multi_collection_tests;
 
 void main() {
   group('All Drift Integration Tests', () {
-    // group('KISS Repository Tests', kiss_tests.main);
-    // group('Multi-Collection Tests', multi_collection_tests.main);
+    group('KISS Repository Tests', kiss_tests.main);
+    group('Multi-Collection Tests', multi_collection_tests.main);
     group('Custom Query Tests', custom_query_tests.main);
   });
 }

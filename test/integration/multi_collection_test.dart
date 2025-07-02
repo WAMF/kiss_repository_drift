@@ -34,7 +34,7 @@ void main() {
           description: json['description'] as String? ?? '',
           created: DateTime.parse(json['created']! as String),
         ),
-        queryBuilder: DriftTestQueryBuilder(),
+        queryBuilder: const DriftTestQueryBuilder(),
         database: database,
       );
 
@@ -54,7 +54,7 @@ void main() {
           description: json['description'] as String? ?? '',
           created: DateTime.parse(json['created']! as String),
         ),
-        queryBuilder: DriftTestQueryBuilder(),
+        queryBuilder: const DriftTestQueryBuilder(),
         database: database,
       );
 

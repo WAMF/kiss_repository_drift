@@ -6,7 +6,6 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:kiss_drift_repository/src/db/database.dart';
 import 'package:kiss_drift_repository/src/drift_identified_object.dart';
-import 'package:kiss_drift_repository/src/sql_query_builder.dart';
 import 'package:kiss_repository/kiss_repository.dart' as kiss;
 
 /// A Drift implementation of the KISS Repository interface.
@@ -34,7 +33,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
     required String tableName,
     required Map<String, Object?> Function(T) toDrift,
     required T Function(Map<String, Object?>) fromDrift,
-    SqlQueryBuilder<dynamic>? queryBuilder,
+    kiss.QueryBuilder<Expression<bool>?>? queryBuilder,
   }) async {
 
     return RepositoryDrift<T>._(
@@ -50,7 +49,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   final String tableName;
   final Map<String, Object?> Function(T) toDrift;
   final T Function(Map<String, Object?>) fromDrift;
-  final SqlQueryBuilder<dynamic>? queryBuilder;
+  final kiss.QueryBuilder<Expression<bool>?>? queryBuilder;
 
   @override
   String? get path => tableName;
@@ -96,27 +95,19 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Future<List<T>> query({kiss.Query query = const kiss.AllQuery()}) async {
-    // For complex queries, use raw SQL to properly handle parameters
-    if (query is! kiss.AllQuery && queryBuilder != null) {
-      final sqlWhere = queryBuilder!.build(query);
-      if (sqlWhere != null) {
-        final fullSql = 'SELECT * FROM items WHERE collection = ? AND (${sqlWhere.clause})';
-        final results = await database.customSelect(
-          fullSql,
-          variables: [Variable(tableName), ...sqlWhere.args.map((e) => Variable(e))],
-          readsFrom: {database.items},
-        ).get();
-        
-        return results.map((row) {
-          final jsonData = jsonDecode(row.data['data']! as String) as Map<String, Object?>;
-          return fromDrift(jsonData);
-        }).toList();
-      }
-    }
+    final selectQuery = database.select(database.items);
 
-    // For simple queries, use typed API
-    final selectQuery = database.select(database.items)
-      ..where((tbl) => tbl.collection.equals(tableName));
+    // Always filter by collection, and optionally add custom query
+    if (query is! kiss.AllQuery && queryBuilder != null) {
+      final whereExpression = queryBuilder!.build(query);
+      if (whereExpression != null) {
+        selectQuery.where((tbl) => tbl.collection.equals(tableName) & whereExpression);
+      } else {
+        selectQuery.where((tbl) => tbl.collection.equals(tableName));
+      }
+    } else {
+      selectQuery.where((tbl) => tbl.collection.equals(tableName));
+    }
     final results = await selectQuery.get();
     return results.map((result) {
       final jsonData = jsonDecode(result.data) as Map<String, Object?>;
@@ -126,27 +117,19 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) {
-    // For complex queries, use raw SQL with proper parameter binding
-    if (query is! kiss.AllQuery && queryBuilder != null) {
-      final sqlWhere = queryBuilder!.build(query);
-      if (sqlWhere != null) {
-        final fullSql = 'SELECT * FROM items WHERE collection = ? AND (${sqlWhere.clause})';
-        return database.customSelect(
-          fullSql,
-          variables: [Variable(tableName), ...sqlWhere.args.map((e) => Variable(e))],
-          readsFrom: {database.items},
-        ).watch().map((rows) {
-          return rows.map((row) {
-            final jsonData = jsonDecode(row.data['data']! as String) as Map<String, Object?>;
-            return fromDrift(jsonData);
-          }).toList();
-        });
-      }
-    }
+    final selectQuery = database.select(database.items);
 
-    // For simple queries, use typed API for better streaming
-    final selectQuery = database.select(database.items)
-      ..where((tbl) => tbl.collection.equals(tableName));
+    // Always filter by collection, and optionally add custom query
+    if (query is! kiss.AllQuery && queryBuilder != null) {
+      final whereExpression = queryBuilder!.build(query);
+      if (whereExpression != null) {
+        selectQuery.where((tbl) => tbl.collection.equals(tableName) & whereExpression);
+      } else {
+        selectQuery.where((tbl) => tbl.collection.equals(tableName));
+      }
+    } else {
+      selectQuery.where((tbl) => tbl.collection.equals(tableName));
+    }
 
     return selectQuery.watch().map((rows) {
       return rows.map((row) {
