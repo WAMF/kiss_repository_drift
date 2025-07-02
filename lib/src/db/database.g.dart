@@ -17,6 +17,17 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _collectionMeta = const VerificationMeta(
+    'collection',
+  );
+  @override
+  late final GeneratedColumn<String> collection = GeneratedColumn<String>(
+    'collection',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _dataMeta = const VerificationMeta('data');
   @override
   late final GeneratedColumn<String> data = GeneratedColumn<String>(
@@ -51,7 +62,13 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     defaultValue: currentDateAndTime,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, data, createdAt, updatedAt];
+  List<GeneratedColumn> get $columns => [
+    id,
+    collection,
+    data,
+    createdAt,
+    updatedAt,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -68,6 +85,14 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('collection')) {
+      context.handle(
+        _collectionMeta,
+        collection.isAcceptableOrUnknown(data['collection']!, _collectionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_collectionMeta);
     }
     if (data.containsKey('data')) {
       context.handle(
@@ -93,7 +118,7 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {id};
+  Set<GeneratedColumn> get $primaryKey => {id, collection};
   @override
   Item map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
@@ -101,6 +126,10 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
+      )!,
+      collection: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}collection'],
       )!,
       data: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -125,11 +154,13 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
 
 class Item extends DataClass implements Insertable<Item> {
   final String id;
+  final String collection;
   final String data;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Item({
     required this.id,
+    required this.collection,
     required this.data,
     required this.createdAt,
     required this.updatedAt,
@@ -138,6 +169,7 @@ class Item extends DataClass implements Insertable<Item> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    map['collection'] = Variable<String>(collection);
     map['data'] = Variable<String>(data);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -147,6 +179,7 @@ class Item extends DataClass implements Insertable<Item> {
   ItemsCompanion toCompanion(bool nullToAbsent) {
     return ItemsCompanion(
       id: Value(id),
+      collection: Value(collection),
       data: Value(data),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -160,6 +193,7 @@ class Item extends DataClass implements Insertable<Item> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Item(
       id: serializer.fromJson<String>(json['id']),
+      collection: serializer.fromJson<String>(json['collection']),
       data: serializer.fromJson<String>(json['data']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -170,6 +204,7 @@ class Item extends DataClass implements Insertable<Item> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'collection': serializer.toJson<String>(collection),
       'data': serializer.toJson<String>(data),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -178,11 +213,13 @@ class Item extends DataClass implements Insertable<Item> {
 
   Item copyWith({
     String? id,
+    String? collection,
     String? data,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Item(
     id: id ?? this.id,
+    collection: collection ?? this.collection,
     data: data ?? this.data,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -190,6 +227,9 @@ class Item extends DataClass implements Insertable<Item> {
   Item copyWithCompanion(ItemsCompanion data) {
     return Item(
       id: data.id.present ? data.id.value : this.id,
+      collection: data.collection.present
+          ? data.collection.value
+          : this.collection,
       data: data.data.present ? data.data.value : this.data,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
@@ -200,6 +240,7 @@ class Item extends DataClass implements Insertable<Item> {
   String toString() {
     return (StringBuffer('Item(')
           ..write('id: $id, ')
+          ..write('collection: $collection, ')
           ..write('data: $data, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -208,12 +249,13 @@ class Item extends DataClass implements Insertable<Item> {
   }
 
   @override
-  int get hashCode => Object.hash(id, data, createdAt, updatedAt);
+  int get hashCode => Object.hash(id, collection, data, createdAt, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Item &&
           other.id == this.id &&
+          other.collection == this.collection &&
           other.data == this.data &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -221,12 +263,14 @@ class Item extends DataClass implements Insertable<Item> {
 
 class ItemsCompanion extends UpdateCompanion<Item> {
   final Value<String> id;
+  final Value<String> collection;
   final Value<String> data;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const ItemsCompanion({
     this.id = const Value.absent(),
+    this.collection = const Value.absent(),
     this.data = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -234,14 +278,17 @@ class ItemsCompanion extends UpdateCompanion<Item> {
   });
   ItemsCompanion.insert({
     required String id,
+    required String collection,
     required String data,
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
+       collection = Value(collection),
        data = Value(data);
   static Insertable<Item> custom({
     Expression<String>? id,
+    Expression<String>? collection,
     Expression<String>? data,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -249,6 +296,7 @@ class ItemsCompanion extends UpdateCompanion<Item> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (collection != null) 'collection': collection,
       if (data != null) 'data': data,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -258,6 +306,7 @@ class ItemsCompanion extends UpdateCompanion<Item> {
 
   ItemsCompanion copyWith({
     Value<String>? id,
+    Value<String>? collection,
     Value<String>? data,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
@@ -265,6 +314,7 @@ class ItemsCompanion extends UpdateCompanion<Item> {
   }) {
     return ItemsCompanion(
       id: id ?? this.id,
+      collection: collection ?? this.collection,
       data: data ?? this.data,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -277,6 +327,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (collection.present) {
+      map['collection'] = Variable<String>(collection.value);
     }
     if (data.present) {
       map['data'] = Variable<String>(data.value);
@@ -297,6 +350,7 @@ class ItemsCompanion extends UpdateCompanion<Item> {
   String toString() {
     return (StringBuffer('ItemsCompanion(')
           ..write('id: $id, ')
+          ..write('collection: $collection, ')
           ..write('data: $data, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -320,6 +374,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 typedef $$ItemsTableCreateCompanionBuilder =
     ItemsCompanion Function({
       required String id,
+      required String collection,
       required String data,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
@@ -328,6 +383,7 @@ typedef $$ItemsTableCreateCompanionBuilder =
 typedef $$ItemsTableUpdateCompanionBuilder =
     ItemsCompanion Function({
       Value<String> id,
+      Value<String> collection,
       Value<String> data,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
@@ -344,6 +400,11 @@ class $$ItemsTableFilterComposer extends Composer<_$AppDatabase, $ItemsTable> {
   });
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get collection => $composableBuilder(
+    column: $table.collection,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -377,6 +438,11 @@ class $$ItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get collection => $composableBuilder(
+    column: $table.collection,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get data => $composableBuilder(
     column: $table.data,
     builder: (column) => ColumnOrderings(column),
@@ -404,6 +470,11 @@ class $$ItemsTableAnnotationComposer
   });
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get collection => $composableBuilder(
+    column: $table.collection,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get data =>
       $composableBuilder(column: $table.data, builder: (column) => column);
@@ -444,12 +515,14 @@ class $$ItemsTableTableManager
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
+                Value<String> collection = const Value.absent(),
                 Value<String> data = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion(
                 id: id,
+                collection: collection,
                 data: data,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -458,12 +531,14 @@ class $$ItemsTableTableManager
           createCompanionCallback:
               ({
                 required String id,
+                required String collection,
                 required String data,
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion.insert(
                 id: id,
+                collection: collection,
                 data: data,
                 createdAt: createdAt,
                 updatedAt: updatedAt,

@@ -42,8 +42,37 @@ On web platforms, you need to include SQLite WASM files in your `web/` directory
 ## Features
 
 - Local SQLite database with cross-platform support
-- Type-safe operations and real-time streaming
-- Automatic migrations and batch operations
+- Type-safe operations and CRUD functionality
+- Automatic table creation and batch operations
+- Dynamic table creation per repository instance
+
+## 🔀 Implementation Tradeoff
+
+| Feature | Single Table | Separate Tables (Current) |
+|---------|--------------|---------------------------|
+| **Data Isolation** | ❌ All types mixed | ✅ Clean separation |
+| **Multiple Instances** | ❌ No | ✅ Yes |
+| **Streaming** | ✅ Works | ❌ Broken |
+| **Tests** | ✅ 28/28 pass | ⚠️ 21/28 pass |
+| **Architecture** | ❌ Violates pattern | ✅ Clean |
+
+**Current choice: Separate Tables** (architecture > streaming)
+
+## ⚠️ Streaming Limitations
+
+**Single Instance Only**: Drift's streaming capabilities (`stream()` and `streamQuery()`) only work within a single application instance. 
+
+- ✅ **Works**: Real-time updates within the same process
+- ❌ **Doesn't work**: Updates from other application instances/servers
+- ❌ **Doesn't work**: Horizontal scaling scenarios
+
+**Multi-Instance Deployments**: If you need real-time streaming across multiple server instances or in distributed deployments, consider:
+- `kiss_firebase_repository` - Server-side real-time listeners
+- `kiss_pocketbase_repository` - WebSocket-based real-time subscriptions
+
+**Use Cases**: 
+- ✅ **Perfect for**: Single-instance desktop/mobile apps, local development
+- ❌ **Not suitable for**: Multi-server web applications, microservices with shared data
 
 ## Installation
 

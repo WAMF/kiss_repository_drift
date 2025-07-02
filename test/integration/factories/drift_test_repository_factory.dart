@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_print
 
 import 'package:kiss_drift_repository/kiss_drift_repository.dart';
+import 'package:kiss_drift_repository/src/db/database.dart';
 import 'package:kiss_repository/kiss_repository.dart';
 import 'package:kiss_repository_tests/kiss_repository_tests.dart';
 
@@ -8,6 +9,7 @@ import 'drift_test_query_builder.dart';
 
 class DriftTestRepositoryFactory implements RepositoryFactory<ProductModel> {
   Repository<ProductModel>? _repository;
+  final database = AppDatabase(':memory:');
 
   @override
   Future<Repository<ProductModel>> createRepository() async {
@@ -27,8 +29,8 @@ class DriftTestRepositoryFactory implements RepositoryFactory<ProductModel> {
         description: json['description'] as String? ?? '',
         created: DateTime.parse(json['created']! as String),
       ),
-      queryBuilder: const DriftTestQueryBuilder(),
-      databasePath: ':memory:',
+      queryBuilder: DriftTestQueryBuilder(),
+      database: database,
     );
     return _repository!;
   }
@@ -41,16 +43,7 @@ class DriftTestRepositoryFactory implements RepositoryFactory<ProductModel> {
     }
 
     try {
-      final allItems = await _repository!.query();
-      print('🧹 Cleanup: Found ${allItems.length} items to delete');
-
-      if (allItems.isNotEmpty) {
-        final ids = allItems.map((item) => item.id).toList();
-        await _repository!.deleteAll(ids);
-        print('🧹 Cleanup: Deleted ${ids.length} items successfully');
-      } else {
-        print('🧹 Cleanup: Repository already empty');
-      }
+      await database.delete(database.items).go();
     } catch (e) {
       print('❌ Cleanup failed: $e');
     }

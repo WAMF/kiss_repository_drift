@@ -6,12 +6,13 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:kiss_drift_repository/src/db/database.dart';
 import 'package:kiss_drift_repository/src/drift_identified_object.dart';
+import 'package:kiss_drift_repository/src/sql_query_builder.dart';
 import 'package:kiss_repository/kiss_repository.dart' as kiss;
 
 /// A Drift implementation of the KISS Repository interface.
 ///
 /// This implementation uses SQLite through Drift for local data persistence
-/// with type-safe database operations and real-time streaming capabilities.
+/// with collection-based logical separation in a single table.
 class RepositoryDrift<T> implements kiss.Repository<T> {
   RepositoryDrift._({
     required this.database,
@@ -23,19 +24,18 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   /// Creates a new Drift repository instance.
   ///
-  /// [tableName] - The name of the database table (for path identification)
+  /// [database] - The Drift database instance to use
+  /// [tableName] - The collection name for logical separation
   /// [toDrift] - Function to convert objects to JSON-serializable format
   /// [fromDrift] - Function to convert JSON data back to objects
   /// [queryBuilder] - Optional query builder for custom queries
-  /// [databasePath] - Optional custom database path (uses default if null)
   static Future<RepositoryDrift<T>> create<T>({
+    required AppDatabase database,
     required String tableName,
     required Map<String, Object?> Function(T) toDrift,
     required T Function(Map<String, Object?>) fromDrift,
-    kiss.QueryBuilder<Expression<bool>?>? queryBuilder,
-    String? databasePath,
+    SqlQueryBuilder<dynamic>? queryBuilder,
   }) async {
-    final database = AppDatabase(databasePath);
 
     return RepositoryDrift<T>._(
       database: database,
@@ -50,7 +50,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   final String tableName;
   final Map<String, Object?> Function(T) toDrift;
   final T Function(Map<String, Object?>) fromDrift;
-  final kiss.QueryBuilder<Expression<bool>?>? queryBuilder;
+  final SqlQueryBuilder<dynamic>? queryBuilder;
 
   @override
   String? get path => tableName;
@@ -58,7 +58,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Future<T> get(String id) async {
     final result = await (database.select(database.items)
-      ..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
+      ..where((tbl) => tbl.id.equals(id) & tbl.collection.equals(tableName))).getSingleOrNull();
 
     if (result == null) {
       throw kiss.RepositoryException.notFound(id);
@@ -71,7 +71,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Stream<T> stream(String id) {
     final query = database.select(database.items)
-      ..where((tbl) => tbl.id.equals(id));
+      ..where((tbl) => tbl.id.equals(id) & tbl.collection.equals(tableName));
     var emitted = false;
 
     return query.watchSingleOrNull().transform(
@@ -96,16 +96,27 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Future<List<T>> query({kiss.Query query = const kiss.AllQuery()}) async {
-    final selectQuery = database.select(database.items);
-
-    // Apply SQL-level filtering if we have a query builder and it's not AllQuery
+    // For complex queries, use raw SQL to properly handle parameters
     if (query is! kiss.AllQuery && queryBuilder != null) {
-      final whereExpression = queryBuilder!.build(query);
-      if (whereExpression != null) {
-        selectQuery.where((tbl) => whereExpression);
+      final sqlWhere = queryBuilder!.build(query);
+      if (sqlWhere != null) {
+        final fullSql = 'SELECT * FROM items WHERE collection = ? AND (${sqlWhere.clause})';
+        final results = await database.customSelect(
+          fullSql,
+          variables: [Variable(tableName), ...sqlWhere.args.map((e) => Variable(e))],
+          readsFrom: {database.items},
+        ).get();
+        
+        return results.map((row) {
+          final jsonData = jsonDecode(row.data['data']! as String) as Map<String, Object?>;
+          return fromDrift(jsonData);
+        }).toList();
       }
     }
 
+    // For simple queries, use typed API
+    final selectQuery = database.select(database.items)
+      ..where((tbl) => tbl.collection.equals(tableName));
     final results = await selectQuery.get();
     return results.map((result) {
       final jsonData = jsonDecode(result.data) as Map<String, Object?>;
@@ -115,14 +126,27 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
 
   @override
   Stream<List<T>> streamQuery({kiss.Query query = const kiss.AllQuery()}) {
-    final selectQuery = database.select(database.items);
-
+    // For complex queries, use raw SQL with proper parameter binding
     if (query is! kiss.AllQuery && queryBuilder != null) {
-      final whereExpression = queryBuilder!.build(query);
-      if (whereExpression != null) {
-        selectQuery.where((tbl) => whereExpression);
+      final sqlWhere = queryBuilder!.build(query);
+      if (sqlWhere != null) {
+        final fullSql = 'SELECT * FROM items WHERE collection = ? AND (${sqlWhere.clause})';
+        return database.customSelect(
+          fullSql,
+          variables: [Variable(tableName), ...sqlWhere.args.map((e) => Variable(e))],
+          readsFrom: {database.items},
+        ).watch().map((rows) {
+          return rows.map((row) {
+            final jsonData = jsonDecode(row.data['data']! as String) as Map<String, Object?>;
+            return fromDrift(jsonData);
+          }).toList();
+        });
       }
     }
+
+    // For simple queries, use typed API for better streaming
+    final selectQuery = database.select(database.items)
+      ..where((tbl) => tbl.collection.equals(tableName));
 
     return selectQuery.watch().map((rows) {
       return rows.map((row) {
@@ -142,6 +166,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
           .into(database.items)
           .insert(ItemsCompanion(
             id: Value(item.id),
+            collection: Value(tableName),
             data: Value(json),
             createdAt: Value(now),
             updatedAt: Value(now),
@@ -162,10 +187,8 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
       final updated = updater(current);
       final json = jsonEncode(toDrift(updated));
 
-      final rows = await (database.update(
-        database.items,
-      )
-        ..where((tbl) => tbl.id.equals(id))).write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
+      final rows = await (database.update(database.items)
+        ..where((tbl) => tbl.id.equals(id) & tbl.collection.equals(tableName))).write(ItemsCompanion(data: Value(json), updatedAt: Value(DateTime.now())));
 
       if (rows == 0) throw kiss.RepositoryException.notFound(id);
       return updated;
@@ -175,7 +198,7 @@ class RepositoryDrift<T> implements kiss.Repository<T> {
   @override
   Future<void> delete(String id) async {
     await (database.delete(database.items)
-      ..where((tbl) => tbl.id.equals(id))).go();
+      ..where((tbl) => tbl.id.equals(id) & tbl.collection.equals(tableName))).go();
   }
 
   @override

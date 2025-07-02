@@ -7,17 +7,19 @@ part 'database.g.dart';
 
 class Items extends Table {
   TextColumn get id => text()();
+  TextColumn get collection => text()();
   TextColumn get data => text()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
-  Set<Column> get primaryKey => {id};
+  Set<Column> get primaryKey => {id, collection};
 }
 
 @DriftDatabase(tables: [Items])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([String? databasePath]) : super(connect(databasePath));
+  
   @override
   int get schemaVersion => 1;
 }
