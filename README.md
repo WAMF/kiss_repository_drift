@@ -47,21 +47,16 @@ On web platforms, you need to include SQLite WASM files in your `web/` directory
 - Automatic table creation and batch operations
 - Complete CRUD operations with streaming support
 
-## ⚠️ Streaming Limitations
-
-**Single Instance Only**: Drift's streaming capabilities (`stream()` and `streamQuery()`) only work within a single application instance. 
-
-- ✅ **Works**: Real-time updates within the same process
-- ❌ **Doesn't work**: Updates from other application instances/servers
-- ❌ **Doesn't work**: Horizontal scaling scenarios
-
-**Multi-Instance Deployments**: If you need real-time streaming across multiple server instances or in distributed deployments, consider:
-- `kiss_firebase_repository` - Server-side real-time listeners
-- `kiss_pocketbase_repository` - WebSocket-based real-time subscriptions
-
-**Use Cases**: 
+### 📡 Streaming Architecture
+- ⚠️ **In-Process Streaming**: SQLite triggers - single application instance only
+- ✅ **Local Real-time**: Changes trigger Dart streams within the same process
+- ❌ **Multi-Instance**: Updates from other processes/servers are not streamed
 - ✅ **Perfect for**: Single-instance desktop/mobile apps, local development
 - ❌ **Not suitable for**: Multi-server web applications, microservices with shared data
+
+**Multi-Instance Alternatives**: If you need real-time streaming across multiple server instances:
+- `kiss_firebase_repository` - Server-side real-time listeners
+- `kiss_pocketbase_repository` - WebSocket-based real-time subscriptions
 
 ## Installation
 
