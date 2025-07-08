@@ -100,10 +100,9 @@ void main() {
       }
     });
 
-
     test('should support streaming with custom queries (raw SQL)', () async {
       // Test the complex streaming path with custom SQL queries
-      
+
       // Add some initial products to product_1 collection
       final cheapProduct = ProductModel(
         id: 'cheap1',
@@ -125,9 +124,7 @@ void main() {
       await product1Repo.add(IdentifiedObject(expensiveProduct.id, expensiveProduct));
 
       // Start streaming expensive products (price > 100) using custom query
-      final expensiveStream = product1Repo.streamQuery(
-        query: QueryByPriceGreaterThan(100.0),
-      );
+      final expensiveStream = product1Repo.streamQuery(query: QueryByPriceRange(minPrice: 100.0));
 
       final streamEvents = <List<ProductModel>>[];
       final subscription = expensiveStream.listen(streamEvents.add);
@@ -176,15 +173,18 @@ void main() {
       // Note: This tests if the raw SQL WHERE clause is actually working in streaming
       final finalEvent = streamEvents.last;
       expect(finalEvent, hasLength(2)); // Still only 2 expensive products
-      
+
       // Update an expensive product to become cheap - should remove from stream
-      await product1Repo.update('expensive1', (current) => ProductModel(
-        id: current.id,
-        name: current.name,
-        price: 50.0, // Now cheap
-        description: current.description,
-        created: current.created,
-      ));
+      await product1Repo.update(
+        'expensive1',
+        (current) => ProductModel(
+          id: current.id,
+          name: current.name,
+          price: 50.0, // Now cheap
+          description: current.description,
+          created: current.created,
+        ),
+      );
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       // Stream should now have only 1 expensive product
@@ -206,10 +206,5 @@ class UserModel {
   final String email;
   final DateTime created;
 
-  UserModel({
-    required this.id,
-    required this.name,
-    required this.email,
-    required this.created,
-  });
+  UserModel({required this.id, required this.name, required this.email, required this.created});
 }

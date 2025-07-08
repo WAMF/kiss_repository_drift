@@ -18,4 +18,5 @@ dev_dependencies:
   very_good_analysis: ^6.0.0
   drift_dev: ^2.27.0
   build_runner: ^2.5.4
-  kiss_repository_tests: ^0.1.0
+  kiss_repository_tests:
+    path: ../kiss_repository_tests

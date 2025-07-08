@@ -111,7 +111,7 @@ void main() {
       );
 
       final product2 = ProductModel(
-        id: 'p2', 
+        id: 'p2',
         name: 'Product 2',
         price: 20.0,
         description: 'Second product',
@@ -159,7 +159,7 @@ void main() {
 
       final product2 = ProductModel(
         id: sharedId,
-        name: 'Product in Collection 2', 
+        name: 'Product in Collection 2',
         price: 200.0,
         description: 'Product 2 description',
         created: DateTime.now(),
@@ -218,13 +218,16 @@ void main() {
       await product2Repo.add(IdentifiedObject(sharedId, product2));
 
       // Update item in product_1 collection only
-      await product1Repo.update(sharedId, (current) => ProductModel(
-        id: current.id,
-        name: 'Updated Product 1',
-        price: 99.0,
-        description: current.description,
-        created: current.created,
-      ));
+      await product1Repo.update(
+        sharedId,
+        (current) => ProductModel(
+          id: current.id,
+          name: 'Updated Product 1',
+          price: 99.0,
+          description: current.description,
+          created: current.created,
+        ),
+      );
 
       // Verify update only affected product_1 collection
       final updatedProduct1 = await product1Repo.get(sharedId);
@@ -243,8 +246,7 @@ void main() {
       final stillExistsProduct1 = await product1Repo.get(sharedId);
       expect(stillExistsProduct1.name, equals('Updated Product 1'));
 
-      expect(() => product2Repo.get(sharedId), 
-        throwsA(isA<RepositoryException>()));
+      expect(() => product2Repo.get(sharedId), throwsA(isA<RepositoryException>()));
 
       print('✅ CRUD operations isolated between collections');
     });
@@ -280,12 +282,8 @@ void main() {
       await product2Repo.add(IdentifiedObject(expensiveProduct2.id, expensiveProduct2));
 
       // Query for expensive products (price > 100) in each collection
-      final expensiveProduct1Items = await product1Repo.query(
-        query: QueryByPriceGreaterThan(100.0),
-      );
-      final expensiveProduct2Items = await product2Repo.query(
-        query: QueryByPriceGreaterThan(100.0),
-      );
+      final expensiveProduct1Items = await product1Repo.query(query: QueryByPriceRange(minPrice: 100.0));
+      final expensiveProduct2Items = await product2Repo.query(query: QueryByPriceRange(minPrice: 100.0));
 
       // Verify queries only return items from their respective collections
       expect(expensiveProduct1Items, hasLength(1));
@@ -368,10 +366,5 @@ class UserModel {
   final String email;
   final DateTime created;
 
-  UserModel({
-    required this.id,
-    required this.name,
-    required this.email,
-    required this.created,
-  });
+  UserModel({required this.id, required this.name, required this.email, required this.created});
 }

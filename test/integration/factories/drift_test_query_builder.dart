@@ -10,11 +10,17 @@ class DriftTestQueryBuilder implements kiss.QueryBuilder<Expression<bool>?> {
     if (query is QueryByName) {
       return CustomExpression("data LIKE '%\"name\":\"${query.namePrefix}%'");
     }
-    if (query is QueryByPriceGreaterThan) {
-      return CustomExpression("CAST(JSON_EXTRACT(data, '\$.price') AS REAL) > ${query.price}");
-    }
-    if (query is QueryByPriceLessThan) {
-      return CustomExpression("CAST(JSON_EXTRACT(data, '\$.price') AS REAL) < ${query.price}");
+    if (query is QueryByPriceRange) {
+      final conditions = <String>[];
+      if (query.minPrice != null) {
+        conditions.add("CAST(JSON_EXTRACT(data, '\$.price') AS REAL) >= ${query.minPrice}");
+      }
+      if (query.maxPrice != null) {
+        conditions.add("CAST(JSON_EXTRACT(data, '\$.price') AS REAL) <= ${query.maxPrice}");
+      }
+      if (conditions.isNotEmpty) {
+        return CustomExpression(conditions.join(' AND '));
+      }
     }
     return null;
   }
